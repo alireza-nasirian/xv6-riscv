@@ -145,6 +145,7 @@ found:
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
+  p->start_ticks = ticks;
 
   return p;
 }
@@ -680,4 +681,22 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+int
+getProcTick(int pid)
+{
+    struct proc *p;
+    int ticks_passed;
+
+    for(p = proc; p < &proc[NPROC]; p++){
+        acquire(&p->lock);
+        if(p->pid == pid){
+            ticks_passed = ticks - p->start_ticks;
+            release(&p->lock);
+            return ticks_passed;
+        }
+        release(&p->lock);
+    }
+    return -1; // process not found
 }

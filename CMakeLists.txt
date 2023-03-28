@@ -103,4 +103,5 @@ add_executable(xv6_riscv
         .gitignore
         LICENSE
         Makefile
-        README)
+        README
+        user/getProcTicksTest.c)
