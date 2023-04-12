@@ -104,4 +104,4 @@ add_executable(xv6_riscv
         LICENSE
         Makefile
         README
-        user/getProcTicksTest.c)
+        user/getProcTicksTest.c kernel/sysinfo.c kernel/sysinfo.h)
