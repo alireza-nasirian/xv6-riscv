@@ -10,6 +10,10 @@ struct stat;
 struct superblock;
 struct sysinfo;
 
+// scheduling algorithm
+typedef enum{Round_Robin,FCFS} sched_algorithms;
+extern sched_algorithms sched_type;
+
 // bio.c
 void            binit(void);
 struct buf*     bread(uint, uint);
@@ -110,6 +114,9 @@ int             either_copyin(void *dst, int user_src, uint64 src, uint64 len);
 void            procdump(void);
 int             getProcTick(int);
 int             nproc(void);
+int             tWait(uint64 addr,uint64 proc_time);
+void            set_scheduler(sched_algorithms schedmode);
+void            updatetimes(void);
 
 // swtch.S
 void            swtch(struct context*, struct context*);

@@ -110,3 +110,21 @@ sys_sysinfo(void)
 
     return systeminfo(info);
 }
+
+uint64
+sys_tWait(void)
+{
+    uint64 p;
+    argaddr(0, &p);
+    uint64 ptime;
+    argaddr(1, &ptime);
+    return tWait(p,ptime);
+}
+uint64
+sys_sched(void)
+{
+    int schedmode;
+    argint(0,&schedmode);
+    set_scheduler(schedmode);
+    return 0;
+}

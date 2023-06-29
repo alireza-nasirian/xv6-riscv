@@ -15,6 +15,9 @@ struct proc *initproc;
 int nextpid = 1;
 struct spinlock pid_lock;
 
+sched_algorithms sched_type  = FCFS;
+
+
 extern void forkret(void);
 static void freeproc(struct proc *p);
 
@@ -146,6 +149,11 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
   p->start_ticks = ticks;
+
+  p->exittick = 0;
+  p->sleepticks = 0;
+  p->readyticks = 0;
+  p->runningticks = 0;
 
   return p;
 }
@@ -435,6 +443,129 @@ wait(uint64 addr)
   }
 }
 
+int
+tWait(uint64 addr,uint64 proc_time)
+{
+    struct proc *pp;
+    int havekids, pid;
+    struct proc *p = myproc();
+
+    acquire(&wait_lock);
+
+    for(;;){
+        // Scan through table looking for exited children.
+        havekids = 0;
+        for(pp = proc; pp < &proc[NPROC]; pp++){
+            if(pp->parent == p){
+                // make sure the child isn't still in exit() or swtch().
+                acquire(&pp->lock);
+
+                havekids = 1;
+                if(pp->state == ZOMBIE){
+                    // Found one.
+
+                    struct proctime cptime;
+
+                    cptime.cpuburst_time = (long)(pp->runningticks);
+                    cptime.turnaround_time = (long)(pp->exittick - pp->starttick);
+                    cptime.waitingTimeFirst = (long)(pp->sleepticks + pp->readyticks);
+
+                    pid = pp->pid;
+
+                    if(addr != 0 && copyout(p->pagetable, addr, (char *)&pp->xstate,
+                                            sizeof(pp->xstate)) < 0) {
+                        release(&pp->lock);
+                        release(&wait_lock);
+                        return -1;
+                    }
+
+                    if (proc_time != 0 && copyout(p->pagetable,proc_time,
+                                                  (char*)&cptime,sizeof(cptime)) < 0){
+                        release(&pp->lock);
+                        release(&wait_lock);
+                        return -1;
+                    }
+
+                    freeproc(pp);
+                    release(&pp->lock);
+                    release(&wait_lock);
+
+
+                    return pid;
+                }
+                release(&pp->lock);
+            }
+        }
+
+        // No point waiting if we don't have any children.
+        if(!havekids || killed(p)){
+            release(&wait_lock);
+            return -1;
+        }
+
+        // Wait for a child to exit.
+        sleep(p, &wait_lock);  //DOC: wait-sleep
+    }
+}
+
+void
+roundRobin(struct cpu *c)
+{
+    // printf("using rr..\n");
+    struct proc *p;
+    for(p = proc; p < &proc[NPROC]; p++) {
+        acquire(&p->lock);
+        if(p->state == RUNNABLE) {
+            // Switch to chosen process.  It is the process's job
+            // to release its lock and then reacquire it
+            // before jumping back to us.
+            p->state = RUNNING;
+            c->proc = p;
+            swtch(&c->context, &p->context);
+
+            // Process is done running for now.
+            // It should have changed its p->state before coming back.
+            c->proc = 0;
+        }
+        release(&p->lock);
+    }
+}
+
+void
+fcfs(struct cpu *c)
+{
+    struct proc * np = 0;
+
+    for(struct proc * p = proc; p < &proc[NPROC]; p++) {
+        acquire(&p->lock);
+        if(p->state == RUNNABLE && p->pid > 2){
+            if (!np){
+                np = p;
+            }
+            else if(np->starttick >= p->starttick){
+                np = p;
+            }
+        }
+        release(&p->lock);
+    }
+
+    if(np){
+        acquire(&np->lock);
+        if(np->state == RUNNABLE){
+            np->state = RUNNING;
+            c->proc = np;
+            swtch(&c->context, &np->context);
+            c->proc = 0;
+        }
+        release(&np->lock);
+    }
+    else{
+
+        roundRobin(c);
+    }
+}
+
+
 // Per-CPU process scheduler.
 // Each CPU calls scheduler() after setting itself up.
 // Scheduler never returns.  It loops, doing:
@@ -445,31 +576,20 @@ wait(uint64 addr)
 void
 scheduler(void)
 {
-  struct proc *p;
-  struct cpu *c = mycpu();
-  
-  c->proc = 0;
-  for(;;){
-    // Avoid deadlock by ensuring that devices can interrupt.
-    intr_on();
+    struct cpu *c = mycpu();
 
-    for(p = proc; p < &proc[NPROC]; p++) {
-      acquire(&p->lock);
-      if(p->state == RUNNABLE) {
-        // Switch to chosen process.  It is the process's job
-        // to release its lock and then reacquire it
-        // before jumping back to us.
-        p->state = RUNNING;
-        c->proc = p;
-        swtch(&c->context, &p->context);
+    c->proc = 0;
+    for(;;){
+        // Avoid deadlock by ensuring that devices can interrupt.
+        intr_on();
 
-        // Process is done running for now.
-        // It should have changed its p->state before coming back.
-        c->proc = 0;
-      }
-      release(&p->lock);
+        if(sched_type == Round_Robin){
+            roundRobin(c);
+        }
+        else if(sched_type == FCFS){
+            fcfs(c);
+        }
     }
-  }
 }
 
 // Switch to scheduler.  Must hold only p->lock
@@ -623,6 +743,26 @@ killed(struct proc *p)
   return k;
 }
 
+void
+updatetimes(void)
+{
+    struct proc* p;
+    for (p = proc; p < &proc[NPROC]; p++) {
+        acquire(&p->lock);
+        if (p->state == RUNNING) {
+            p->runningticks++;
+        }
+        else if(p->state == RUNNABLE){
+            p->readyticks++;
+        }
+        else if(p->state == SLEEPING)
+        {
+            p->sleepticks++;
+        }
+        release(&p->lock);
+    }
+}
+
 // Copy to either a user address, or kernel address,
 // depending on usr_dst.
 // Returns 0 on success, -1 on error.
@@ -714,4 +854,10 @@ nproc(void)
         release(&p->lock);
     }
     return n;
+}
+
+void
+set_scheduler(sched_algorithms schedmode){
+
+    sched_type=schedmode;
 }

@@ -91,6 +91,11 @@ struct proc {
   int killed;                  // If non-zero, have been killed
   int xstate;                  // Exit status to be returned to parent's wait
   int pid;                     // Process ID
+  uint starttick;
+  uint sleepticks;             // Number of ticks spent in SLEEP state
+  uint readyticks;             // Number of ticks spent in RUNNABLE state
+  uint runningticks;           // Number of ticks spent in RUNNING state
+  uint exittick;
 
   // wait_lock must be held when using this:
   struct proc *parent;         // Parent process
@@ -105,4 +110,10 @@ struct proc {
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
   int start_ticks;             // number of clock ticks at the start of the process
+};
+
+struct proctime {
+    long cpuburst_time;
+    long turnaround_time;
+    long waitingTimeFirst;
 };

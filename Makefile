@@ -135,6 +135,7 @@ UPROGS=\
 	$U/_zombie\
 	$U/_getProcTicksTest\
 	$U/_sysinfoTest\
+	$U/_systWaittest\
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)

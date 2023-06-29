@@ -103,6 +103,8 @@ extern uint64 sys_mkdir(void);
 extern uint64 sys_close(void);
 extern uint64 sys_getProcTick(void);
 extern uint64 sys_sysinfo(void);
+extern uint64 sys_tWait(void);
+extern uint64 sys_sched(void);
 
 // An array mapping syscall numbers from syscall.h
 // to the function that handles the system call.
@@ -130,6 +132,8 @@ static uint64 (*syscalls[])(void) = {
 [SYS_close]   sys_close,
 [SYS_getProcTick] sys_getProcTick,
 [SYS_sysinfo] sys_sysinfo,
+[SYS_tWait]   sys_tWait,
+[SYS_set_scheduler] sys_sched,
 };
 
 void

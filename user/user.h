@@ -1,6 +1,15 @@
 struct stat;
 struct sysinfo;
 
+struct proctime {
+    long cpuburst_time;
+    long turnaround_time;
+    long waitingTimeFirst;
+};
+
+// scheduling algorithm
+enum sched_algorithms {Round_Robin,FCFS} ;
+
 // system calls
 int fork(void);
 int exit(int) __attribute__((noreturn));
@@ -25,6 +34,8 @@ int sleep(int);
 int uptime(void);
 int getProcTick(int);
 int sysinfo(struct sysinfo *);
+int tWait(int*,struct proctime * );
+void set_scheduler(int);
 
 // ulib.c
 int stat(const char*, struct stat*);
