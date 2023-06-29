@@ -9,6 +9,7 @@
 #include "riscv.h"
 #include "defs.h"
 
+void krefset(void *pa, uint64 refsnum);
 void freerange(void *pa_start, void *pa_end);
 
 extern char end[]; // first address after kernel.
@@ -23,10 +24,16 @@ struct {
   struct run *freelist;
 } kmem;
 
+struct {
+    struct spinlock lock;
+    uint refs[MAXPAGES];
+} kref;
+
 void
 kinit()
 {
   initlock(&kmem.lock, "kmem");
+  initlock(&kref.lock, "kref");
   freerange(end, (void*)PHYSTOP);
 }
 
@@ -35,8 +42,70 @@ freerange(void *pa_start, void *pa_end)
 {
   char *p;
   p = (char*)PGROUNDUP((uint64)pa_start);
-  for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE)
-    kfree(p);
+  for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE) {
+      krefset(p,0);
+      kfree(p);
+  }
+}
+
+
+void
+krefset(void *pa, uint64 refsnum)
+{
+    uint64 indx = FRAMEINDX(pa,end);
+
+    if(refsnum > NPROC)
+        panic("krefset");
+
+    acquire(&kref.lock);
+    kref.refs[indx] = refsnum;
+    release(&kref.lock);
+}
+
+uint
+krefs(void *pa)
+{
+    uint ret;
+    uint64 indx = FRAMEINDX(pa,end);
+
+    acquire(&kref.lock);
+    ret = kref.refs[indx];
+    release(&kref.lock);
+
+    return ret;
+}
+
+uint
+krefinc(void *pa)
+{
+    uint ret;
+    uint64 indx = FRAMEINDX(pa,end);
+
+    acquire(&kref.lock);
+
+    if(kref.refs[indx] > NPROC){
+        release(&kref.lock);
+        panic("krefinc");
+    }
+
+    ret = ++kref.refs[indx] ;
+
+    release(&kref.lock);
+
+    return ret;
+}
+
+uint
+krefdec(void *pa)
+{
+    uint ret;
+    uint64 indx = FRAMEINDX(pa,end);
+
+    acquire(&kref.lock);
+    ret = (kref.refs[indx] > 0) ? --kref.refs[indx] : kref.refs[indx];
+    release(&kref.lock);
+
+    return ret;
 }
 
 // Free the page of physical memory pointed at by pa,
@@ -50,6 +119,10 @@ kfree(void *pa)
 
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
+
+  // skip if there is another reference
+  if(krefs(pa) > 0)
+      return;
 
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);

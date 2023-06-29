@@ -65,6 +65,38 @@ usertrap(void)
     intr_on();
 
     syscall();
+  } else if(r_scause() == 15){
+      // page fault
+      char *mem;
+      uint64 pa;
+
+      uint64 pg_start = PGROUNDDOWN(r_stval());
+      pte_t *pte = walk(p->pagetable, pg_start, 0);
+      uint flags = PTE_FLAGS(*pte);
+
+      if((flags & PTE_V) && (flags & PTE_U) &&
+         (flags & PTE_COW) ){
+
+          flags |= PTE_W;
+          flags &= ~(PTE_COW);
+
+          if((mem = kalloc()) == 0){
+              printf("usertrap(): failed to allocate new page\n");
+              setkilled(p);
+          }
+
+          pa = PTE2PA(*pte);
+          memmove(mem, (char*)pa, PGSIZE);
+
+          // unmap the old page
+          uvmunmap(p->pagetable, pg_start, 1, 0);
+          krefdec((void*)pa);
+
+          if(mappages(p->pagetable, pg_start, PGSIZE, (uint64)mem, flags) != 0){
+              printf("usertrap(): failed to map page\n");
+              setkilled(p);
+          }
+      }
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {
